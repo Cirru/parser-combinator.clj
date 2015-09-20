@@ -48,6 +48,9 @@
   (fn [state]
     (helper-chain state parsers)))
 
+(defn combine-times [parser n]
+  (combine-chain (repeat n parser)))
+
 (defn helper-many [state parser counter]
   (let
     [result (parser state)]
@@ -109,7 +112,7 @@
       :value nil)
     (fail state "failed parsing newline")))
 
-(defn parse-open-parent [state]
+(defn parse-open-paren [state]
   (if (match-first state open-paren)
     (assoc state
       :code (subs (:code state) 1)
@@ -147,6 +150,15 @@
       result
       (fail state "found no special in string"))))
 
+(defn parse-eof [state]
+  (if (= (:code state) "")
+    state
+    (fail state "expected EOF")))
+
+(defn parse-indent [state])
+
+(defn parse-unindent [state])
+
 ; generated parser
 
 (def parse-string
@@ -165,13 +177,30 @@
 
 (def parse-token (combine-many (combine-not parse-special-token)))
 
-(defn parse-expression [])
+(def parse-expression
+  (combine-chain parse-open-paren
+    (combine-many parse-item)
+    parse-close-paren))
 
-(defn parse-indentation [])
+(def parse-empty-line
+  (combine-chain parse-newline
+    (combine-optional (combine-many parse-whitespace))
+    (combine-peek (combine-or parse-newline parse-eof))))
 
-(defn parse-unindentation [])
+(def parse-two-blanks
+  (combine-twice parse-whitespace 2))
 
-(defn parse-program [state])
+(def parse-line-breaks
+  (combine-chain
+    (combine-optional (combine-many parse-empty-line))
+    parse-newline))
+
+(def parse-block)
+
+(def parse-block-end)
+
+(def parse-program
+  (combine-many (combine-or parse-newline parse-expression)))
 
 ; exposed methods
 
