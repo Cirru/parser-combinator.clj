@@ -77,6 +77,9 @@
       [result (parser state)]
       (if (:failed result) state result))))
 
+(defn combine-star [parser]
+  (combine-optional (combine-many parser)))
+
 (defn combine-peek [parser]
   (fn [state]
     (let
@@ -84,6 +87,13 @@
       (if (:failed result)
         (failed state "peek failed")
         state))))
+
+(defn combine-value [parser handler]
+  (fn [state]
+    (let
+      [result (parser state)]
+      (assoc result :value
+        (handler (:value result))))))
 
 ; parsers
 
@@ -155,9 +165,39 @@
     state
     (fail state "expected EOF")))
 
-(defn parse-indent [state])
+(defn parse-indent [state]
+  (let
+    [result (parse-indentation state)]
+    (if
+      (> (:value result) (:indentation result))
+      (assoc state
+        :indentation (+ (:indentation result) 1))
+      (fail state "no indent"))))
 
-(defn parse-unindent [state])
+(defn parse-unindent [state]
+  (let
+    [result (parse-indentation state)]
+    (if
+      (< (:value result) (:indentation result))
+      (assoc state
+        :indentation (- (:indentation result) 1))
+      (fail state "no unindent"))))
+
+(defn parse-align [state]
+  (let
+    [result (parse-indentation state)]
+    (if
+      (= (:value result) (:indentation state))
+      result
+      (fail state "not aligned"))))
+
+(defn parse-indentation [state]
+  (combine-value
+    (combine-chain
+      (combine-value parse-line-breaks (fn [value] nil))
+      (combine-value (combine-many parse-two-blanks)
+        (fn [value] (count value))))
+    (fn [value] (first value))))
 
 ; generated parser
 
@@ -184,23 +224,40 @@
 
 (def parse-empty-line
   (combine-chain parse-newline
-    (combine-optional (combine-many parse-whitespace))
+    (combine-star parse-whitespace)
     (combine-peek (combine-or parse-newline parse-eof))))
 
+(def parse-line-eof
+  (combine-chain
+    (combine-star parse-whitespace)
+    (combine-star parse-empty-line)
+    parse-eof))
+
 (def parse-two-blanks
-  (combine-twice parse-whitespace 2))
+  (combine-value
+    (combine-twice parse-whitespace 2)
+    (fn [value] 1)))
 
 (def parse-line-breaks
   (combine-chain
-    (combine-optional (combine-many parse-empty-line))
+    (combine-star parse-empty-line)
     parse-newline))
 
-(def parse-block)
+(def parse-item
+  (combine-or parse-token parse-string parse-expression
+    parse-block))
+
+(def parse-block
+  (combine-chain
+    parse-item
+    (combine-many
+      (combine-or parse-item parse-line-breaks))
+    parse-block-end))
 
 (def parse-block-end)
 
 (def parse-program
-  (combine-many (combine-or parse-newline parse-expression)))
+  (combine-many (combine-or parse-line-breaks parse-block)))
 
 ; exposed methods
 
