@@ -10,6 +10,16 @@
 (def specials-in-token "() \n\t")
 (def specials-in-string "\"\\\n")
 
+; declare
+
+(declare parse-indentation)
+(declare parse-line-breaks)
+(declare parse-two-blanks)
+(declare parse-escaped)
+(declare parse-expression)
+(declare parse-item)
+(declare parse-block)
+
 ; utils
 
 (defn match-first [state character]
@@ -44,7 +54,7 @@
         (recur state (rest parser))))
     state))
 
-(defn combine-chain [parsers]
+(defn combine-chain [& parsers]
   (fn [state]
     (helper-chain state parsers)))
 
@@ -85,7 +95,7 @@
     (let
       [result (parser state)]
       (if (:failed result)
-        (failed state "peek failed")
+        (fail state "peek failed")
         state))))
 
 (defn combine-value [parser handler]
@@ -94,6 +104,18 @@
       [result (parser state)]
       (assoc result :value
         (handler (:value result))))))
+
+(defn helper-alternate [parser-1 parser-2 counter]
+  (fn [state]
+    (let
+      [result (parser-1 state)]
+      (if (:failed result)
+        (if (> counter 0) state
+          (fail state "not matching alternate rule"))
+        (helper-alternate parser-2 parser-1 (+ counter 1))))))
+
+(defn combine-alternate [parser-1 parser-2]
+  (helper-alternate parser-1 parser-2 0))
 
 ; parsers
 
@@ -144,7 +166,7 @@
   (let
     [code-first (subs (:code state) 0 1)
       code-rest (subs (:code state) 1)
-      result (assoc state :code code-rest:value code-first)]
+      result (assoc state :code code-rest :value code-first)]
     (if
       (.contains specials-in-token code-first)
       result
@@ -154,7 +176,7 @@
   (let
     [code-first (subs (:code state) 0 1)
       code-rest (subs (:code state) 1)
-      result (assoc state :code code-rest:value code-first)]
+      result (assoc state :code code-rest :value code-first)]
     (if
       (.contains specials-in-string code-first)
       result
@@ -199,7 +221,34 @@
         (fn [value] (count value))))
     (fn [value] (first value))))
 
+(defn parse-escaped-newline [state]
+  (if
+    (= (subs (:code state) 0 2) "\\n")
+    (assoc state :code (:subs (:code state) 2))
+    (fail state "no escaped newline")))
+
+(defn parse-escaped-tab [state]
+  (if
+    (= (subs (:code state) 0 2) "\\t")
+    (assoc state :code (:subs (:code state) 2))
+    (fail state "no escaped tab")))
+
+(defn parse-escaped-double-quote [state]
+  (if
+    (= (subs (:code state) 0 2) "\\\"")
+    (assoc state :code (:subs (:code state) 2))
+    (fail state "no escaped double quote")))
+
+(defn parse-escaped-backslash [state]
+  (if
+    (= (subs (:code state) 0 2) "\\\\")
+    (assoc state :code (:subs (:code state) 2))
+    (fail state "no escaped backslash")))
+
 ; generated parser
+
+(def parse-string-chars
+  (combine-not parse-special-in-string))
 
 (def parse-string
   (combine-chain parse-quote
@@ -215,11 +264,14 @@
     parse-escaped-double-quote
     parse-escaped-backslash))
 
-(def parse-token (combine-many (combine-not parse-special-token)))
+(def parse-token (combine-many (combine-not parse-special-in-token)))
+
+(def parse-expression-item
+  (combine-or parse-token parse-string parse-expression))
 
 (def parse-expression
   (combine-chain parse-open-paren
-    (combine-many parse-item)
+    (combine-alternate parse-whitespace parse-item)
     parse-close-paren))
 
 (def parse-empty-line
@@ -235,7 +287,7 @@
 
 (def parse-two-blanks
   (combine-value
-    (combine-twice parse-whitespace 2)
+    (combine-times parse-whitespace 2)
     (fn [value] 1)))
 
 (def parse-line-breaks
@@ -244,20 +296,27 @@
     parse-newline))
 
 (def parse-item
-  (combine-or parse-token parse-string parse-expression
-    parse-block))
+  (combine-or parse-token parse-string parse-expression))
+
+(def parse-inner-block
+  (combine-chain parse-indent
+    (combine-alternate parse-block parse-align)
+    parse-unindent))
+
+(def parse-block-line
+  (combine-chain
+    (combine-alternate parse-item parse-whitespace)
+    (combine-optional parse-inner-block)))
 
 (def parse-block
   (combine-chain
-    parse-item
-    (combine-many
-      (combine-or parse-item parse-line-breaks))
-    parse-block-end))
-
-(def parse-block-end)
+    (combine-alternate parse-block-line parse-align)))
 
 (def parse-program
-  (combine-many (combine-or parse-line-breaks parse-block)))
+  (combine-chain
+    (combine-optional parse-line-breaks)
+    (combine-alternate parse-block parse-align)
+    parse-line-eof))
 
 ; exposed methods
 
