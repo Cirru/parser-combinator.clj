@@ -20,7 +20,6 @@
 (declare parse-escaped)
 (declare parse-item)
 (declare parse-expression)
-(declare parse-block)
 (declare parse-block-line)
 
 ; utils
@@ -492,20 +491,16 @@
             (concat main nested)
             main))))))
 
-(def parse-block
-  (wrap "parse-block"
-    (combine-value
-      (combine-alternate parse-block-line parse-align)
-      (fn [value is-failed]
-        (if is-failed nil
-          (filter some? value))))))
-
 (def parse-program
   (wrap "parse-program"
-    (combine-chain
-      (combine-optional parse-line-breaks)
-      (combine-alternate parse-block parse-align)
-      parse-line-eof)))
+    (combine-value
+      (combine-chain
+        (combine-optional parse-line-breaks)
+        (combine-alternate parse-block-line parse-align)
+        parse-line-eof)
+      (fn [value is-failed]
+        (if is-failed nil
+          (filter some? (nth value 1)))))))
 
 ; exposed methods
 

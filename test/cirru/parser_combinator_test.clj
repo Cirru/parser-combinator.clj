@@ -46,3 +46,12 @@
         :failed false
         :value (list "a" (list "b") (list "c"))
         :code ""))))
+
+(deftest parse-program-test
+  (testing "testing parse-program at \"a\nb\n  c\nd\""
+    (let
+      [result (parse-program (assoc initial-state :code "a\nb\n  c\nd"))]
+      (are [keyname value] (= (keyname result) value)
+        :failed false
+        :value (list ("a") (list "b" (list "c")) (list "d"))
+        :code ""))))
