@@ -1,4 +1,5 @@
-(ns cirru.parser-combinator)
+(ns cirru.parser-combinator
+  (:use clojure.pprint))
 
 ; values
 
@@ -29,13 +30,27 @@
   (assoc state :failed true :msg msg))
 
 (defn tabs [state]
-  (assoc state :tab (str "  " (:tab state))))
+  (assoc state :tab (str " ." (:tab state))))
 
 (defn untabs [state]
   (assoc state :tab (subs (:tab state) 2)))
 
 (defn log [name state]
   (println (:tab state) name (:code state) (:value state)))
+
+(defn wrap [label parser]
+  (fn [state]
+    (println (:tab (tabs state)) label
+      (with-out-str (write (:code state)))
+      (:value state))
+    (let
+      [result (parser (tabs state))]
+      (println (:tab result) label
+        (with-out-str (write (:code result)))
+        (with-out-str (write (:value result)))
+        (:failed result)
+        (with-out-str (write (:msg result))))
+      (untabs result))))
 
 ; combinators
 
@@ -51,9 +66,9 @@
     (fail state "no parser is successful")))
 
 (defn combine-or [& parsers]
-  (fn [state]
-    (log "combine-or" state)
-    (untabs (helper-or (tabs state) parsers))))
+  (wrap "combine-or"
+    (fn [state]
+      (helper-or state parsers))))
 
 (defn helper-chain [state parsers]
   (log "helper-chain" state)
@@ -70,15 +85,16 @@
     state))
 
 (defn combine-chain [& parsers]
-  (fn [state]
-    (log "combine-chain" state)
-    (untabs (helper-chain (assoc (tabs state) :value []) parsers))))
+  (wrap "combine-chain"
+    (fn [state]
+      (helper-chain (assoc state :value []) parsers))))
 
 (defn combine-times [parser n]
-  (fn [state]
-    (let
-      [method (combine-chain (repeat n parser))]
-      (untabs (method (tabs state))))))
+  (wrap "combine-times"
+    (fn [state]
+      (let
+        [method (combine-chain (repeat n parser))]
+        (method state)))))
 
 (defn helper-many [state parser counter]
   (log "helper-many" state)
@@ -93,49 +109,49 @@
         parser (+ counter 1)))))
 
 (defn combine-many [parser]
-  (fn [state]
-    (log "combine-many" state)
-    (untabs (helper-many (assoc (tabs state) :value (list)) parser 0))))
+  (wrap "combine-many"
+    (fn [state]
+      (helper-many (assoc state :value (list)) parser 0))))
 
 (defn combine-not [parser]
-  (fn [state]
-    (log "combine-not" state)
-    (let
-      [result (parser (tabs state))]
-      (untabs (if (:failed result)
-        (assoc result :failed false :msg "recovered in not")
-        (fail result "should not be this"))))))
+  (wrap "combine-not"
+    (fn [state]
+      (let
+        [result (parser state)]
+        (if (:failed result)
+          (assoc result :failed false :msg "recovered in not")
+          (fail result "should not be this"))))))
 
 (defn combine-optional [parser]
-  (fn [state]
-    (log "combine-optional" state)
-    (let
-      [result (parser (tabs state))]
-      (untabs (if (:failed result) state result)))))
+  (wrap "combine-optional"
+    (fn [state]
+      (let
+        [result (parser state)]
+        (if (:failed result) state result)))))
 
 (defn combine-star [parser]
-  (fn [state]
-    (log "combine-star" state)
-    (let
-      [method (combine-optional (combine-many parser))]
-      (untabs (method (tabs state))))))
+  (wrap "combine-star"
+    (fn [state]
+      (let
+        [method (combine-optional (combine-many parser))]
+        (method state)))))
 
 (defn combine-peek [parser]
-  (fn [state]
-    (log "combine-peek" state)
-    (let
-      [result (parser (tabs state))]
-      (untabs (if (:failed result)
-        (fail state "peek failed")
-        state)))))
+  (wrap "combine-peek"
+    (fn [state]
+      (let
+        [result (parser state)]
+        (if (:failed result)
+          (fail state "peek failed")
+          state)))))
 
 (defn combine-value [parser handler]
-  (fn [state]
-    (log "combine-value" state)
-    (let
-      [result (parser state)]
-      (assoc result :value
-        (handler (:value result))))))
+  (wrap "combine-value"
+    (fn [state]
+      (let
+        [result (parser state)]
+        (assoc result :value
+          (handler (:value result)))))))
 
 (defn helper-alternate [state parser-1 parser-2 counter]
   (log "helper-alternate" state)
@@ -150,284 +166,271 @@
         parser-2 parser-1 (+ counter 1)))))
 
 (defn combine-alternate [parser-1 parser-2]
-  (fn [state]
-    (untabs (helper-alternate
-      (assoc (tabs state) :value (list)) parser-1 parser-2 0))))
+  (wrap "combine-alternate"
+    (fn [state]
+      (helper-alternate
+        (assoc state :value (list)) parser-1 parser-2 0))))
 
 ; parsers
 
-(defn parse-quote [state]
-  (log "parse-quote" state)
-  (if (match-first state double-quote)
-    (assoc state
-      :code (subs (:code state) 1)
-      :x (+ (:x state) 1)
-      :value nil)
-    (fail state "failed parsing double quote")))
+(def parse-quote
+  (wrap "parse-quote"
+    (fn [state]
+      (if (match-first state double-quote)
+        (assoc state
+          :code (subs (:code state) 1)
+          :x (+ (:x state) 1)
+          :value nil)
+        (fail state "failed parsing double quote")))))
 
-(defn parse-whitespace [state]
-  (log "parse-whitespace" state)
-  (if (match-first state whitespace)
-    (assoc state
-      :code (subs (:code state) 1)
-      :x (+ (:x state) 1)
-      :value nil)
-    (fail state "failed parsing whitespace")))
+(def parse-whitespace
+  (wrap "parse-whitespace"
+    (fn [state]
+      (if (match-first state whitespace)
+        (assoc state
+          :code (subs (:code state) 1)
+          :x (+ (:x state) 1)
+          :value nil)
+        (fail state "failed parsing whitespace")))))
 
-(defn parse-newline [state]
-  (log "parse-newline" state)
-  (if (match-first state line-break)
-    (assoc state
-      :code (subs (:code state) 1)
-      :y (+ (:y state) 1)
-      :x 1
-      :value nil)
-    (fail state "failed parsing newline")))
+(def parse-newline
+  (wrap "parse-newline"
+    (fn [state]
+      (if (match-first state line-break)
+        (assoc state
+          :code (subs (:code state) 1)
+          :y (+ (:y state) 1)
+          :x 1
+          :value nil)
+        (fail state "failed parsing newline")))))
 
-(defn parse-open-paren [state]
-  (log "parse-open-paren" state)
-  (if (match-first state open-paren)
-    (assoc state
-      :code (subs (:code state) 1)
-      :y (+ (:y state) 1)
-      :x 1
-      :value nil)
-    (fail state "failed parsing open paren")))
+(def parse-open-paren
+  (wrap "parse-open-paren"
+    (fn [state]
+      (if (match-first state open-paren)
+        (assoc state
+          :code (subs (:code state) 1)
+          :y (+ (:y state) 1)
+          :x 1
+          :value nil)
+        (fail state "failed parsing open paren")))))
 
-(defn parse-close-paren [state]
-  (log "parse-close-paren" state)
-  (if (match-first state close-paren)
-    (assoc state
-      :code (subs (:code state) 1)
-      :y (+ (:y state) 1)
-      :x 1
-      :value nil)
-    (fail state "failed parsing close paren")))
+(def parse-close-paren
+  (wrap "parse-close-paren"
+    (fn [state]
+      (if (match-first state close-paren)
+        (assoc state
+          :code (subs (:code state) 1)
+          :y (+ (:y state) 1)
+          :x 1
+          :value nil)
+        (fail state "failed parsing close paren")))))
 
-(defn parse-special-in-token [state]
-  (log "parse-special-in-token" state)
-  (if
-    (= (:code state) "")
-    (fail state "eof for special in token")
-    (let
-      [code-first (subs (:code state) 0 1)
-        code-rest (subs (:code state) 1)
-        result (assoc state :code code-rest :value code-first)]
+(def parse-special-in-token
+  (wrap "parse-special-in-token"
+    (fn [state]
       (if
-        (.contains specials-in-token code-first)
-        result
-        (fail result "found no special in token")))))
+        (= (:code state) "")
+        (fail state "eof for special in token")
+        (let
+          [code-first (subs (:code state) 0 1)
+            code-rest (subs (:code state) 1)
+            result (assoc state :code code-rest :value code-first)]
+          (if
+            (.contains specials-in-token code-first)
+            result
+            (fail result "found no special in token")))))))
 
-(defn parse-special-in-string [state]
-  (log "parse-special-in-string" state)
-  (let
-    [code-first (subs (:code state) 0 1)
-      code-rest (subs (:code state) 1)
-      result (assoc state :code code-rest :value code-first)]
-    (if
-      (.contains specials-in-string code-first)
-      result
-      (fail result "found no special in string"))))
+(def parse-special-in-string
+  (wrap "parse-special-in-string"
+    (fn [state]
+      (let
+        [code-first (subs (:code state) 0 1)
+          code-rest (subs (:code state) 1)
+          result (assoc state :code code-rest :value code-first)]
+        (if
+          (.contains specials-in-string code-first)
+          result
+          (fail result "found no special in string"))))))
 
-(defn parse-eof [state]
-  (log "parse-eof" state)
-  (if (= (:code state) "")
-    (assoc state :value nil)
-    (fail state "expected EOF")))
+(def parse-eof
+  (wrap "parse-eof"
+    (fn [state]
+      (if (= (:code state) "")
+        (assoc state :value nil)
+        (fail state "expected EOF")))))
 
-(defn parse-indent [state]
-  (log "parse-indent" state)
-  (let
-    [result (parse-indentation state)]
-    (println "debugging" (:value result))
-    (if
-      (> (:value result) (:indentation result))
-      (assoc state
-        :indentation (+ (:indentation result) 1))
-      (fail result "no indent"))))
+(def parse-indent
+  (wrap "parse-indent"
+    (fn [state]
+      (let
+        [result (parse-indentation state)]
+        (println "debugging" (:value result))
+        (if
+          (> (:value result) (:indentation result))
+          (assoc state
+            :indentation (+ (:indentation result) 1))
+          (fail result "no indent"))))))
 
-(defn parse-unindent [state]
-  (log "parse-unindent" state)
-  (let
-    [result (parse-indentation state)]
-    (if
-      (< (:value result) (:indentation result))
-      (assoc state
-        :indentation (- (:indentation result) 1))
-      (fail result "no unindent"))))
+(def parse-unindent
+  (wrap "parse-unindent"
+    (fn [state]
+      (let
+        [result (parse-indentation state)]
+        (if
+          (< (:value result) (:indentation result))
+          (assoc state
+            :indentation (- (:indentation result) 1))
+          (fail result "no unindent"))))))
 
-(defn parse-align [state]
-  (log "parse-align" state)
-  (let
-    [result (parse-indentation state)]
-    (if
-      (= (:value result) (:indentation state))
-      result
-      (fail result "not aligned"))))
+(def parse-align
+  (wrap "parse-align"
+    (fn [state]
+      (let
+        [result (parse-indentation state)]
+        (if
+          (= (:value result) (:indentation state))
+          result
+          (fail result "not aligned"))))))
 
-(defn parse-escaped-newline [state]
-  (log "parse-escaped-newline" state)
-  (if
-    (= (subs (:code state) 0 2) "\\n")
-    (assoc state :code (:subs (:code state) 2))
-    (fail state "no escaped newline")))
+(def parse-escaped-newline
+  (wrap "parse-escaped-newline"
+    (fn [state]
+      (if
+        (= (subs (:code state) 0 2) "\\n")
+        (assoc state :code (:subs (:code state) 2))
+        (fail state "no escaped newline")))))
 
-(defn parse-escaped-tab [state]
-  (log "parse-escaped-tab" state)
-  (if
-    (= (subs (:code state) 0 2) "\\t")
-    (assoc state :code (:subs (:code state) 2))
-    (fail state "no escaped tab")))
+(def parse-escaped-tab
+  (wrap "parse-escaped-tab"
+    (fn [state]
+      (if
+        (= (subs (:code state) 0 2) "\\t")
+        (assoc state :code (:subs (:code state) 2))
+        (fail state "no escaped tab")))))
 
-(defn parse-escaped-double-quote [state]
-  (log "parse-escaped-double-quote" state)
-  (if
-    (= (subs (:code state) 0 2) "\\\"")
-    (assoc state :code (:subs (:code state) 2))
-    (fail state "no escaped double quote")))
+(def parse-escaped-double-quote
+  (wrap "parse-escaped-double-quote"
+    (fn [state]
+      (if
+        (= (subs (:code state) 0 2) "\\\"")
+        (assoc state :code (:subs (:code state) 2))
+        (fail state "no escaped double quote")))))
 
-(defn parse-escaped-backslash [state]
-  (log "parse-escaped-backslash" state)
-  (if
-    (= (subs (:code state) 0 2) "\\\\")
-    (assoc state :code (:subs (:code state) 2))
-    (fail state "no escaped backslash")))
+(def parse-escaped-backslash
+  (wrap "parse-escaped-backslash"
+    (fn [state]
+      (if
+        (= (subs (:code state) 0 2) "\\\\")
+        (assoc state :code (:subs (:code state) 2))
+        (fail state "no escaped backslash")))))
 
-(defn parse-string-char [state]
-  (log "parse-string-char" state)
-  (if
-    (> (count (:code state)) 1)
-    ((combine-not parse-special-in-string) state)
-    (fail state "no more char for string")))
+(def parse-string-char
+  (wrap "parse-string-char"
+    (fn [state]
+      (if
+        (> (count (:code state)) 1)
+        ((combine-not parse-special-in-string) state)
+        (fail state "no more char for string")))))
 
-(defn parse-token-char [state]
-  (log "parse-token-char" state)
-  (if
-    (> (count (:code state)) 1)
-    ((combine-not parse-special-in-token) state)
-    (fail state "no more char for token")))
+(def parse-token-char
+  (wrap "parse-token-char"
+    (fn [state]
+      (if
+        (> (count (:code state)) 1)
+        ((combine-not parse-special-in-token) state)
+        (fail state "no more char for token")))))
 
 ; generated parser
 
-(defn parse-string [state]
-  (log "parse-string" state)
-  (let
-    [method (combine-chain parse-quote
+(def parse-string
+  (wrap "parse-string"
+    (combine-chain parse-quote
       (combine-many (combine-or parse-string-char parse-escaped))
-      parse-quote)]
-    (untabs (method (tabs state)))))
+      parse-quote)))
 
-(defn parse-token-end [state]
-  (log "parse-token-end" state)
-  (let
-    [method (combine-peek
-      (combine-or parse-whitespace parse-close-paren parse-newline))]
-    (untabs (method (tabs state)))))
+(def parse-token-end
+  (wrap "parse-token-end"
+    (combine-peek
+      (combine-or parse-whitespace parse-close-paren parse-newline))))
 
-(defn parse-escaped [state]
-  (log "parse-escaped" state)
-  (let
-    [method (combine-or parse-escaped-newline parse-escaped-tab
+(def parse-escaped
+  (wrap "parse-escaped"
+    (combine-or parse-escaped-newline parse-escaped-tab
       parse-escaped-double-quote
-      parse-escaped-backslash)]
-    (untabs (method (tabs state)))))
+      parse-escaped-backslash)))
 
-(defn parse-token [state]
-  (log "parse-token" state)
-  (let
-    [method (combine-many parse-token-char)]
-    (untabs (method (tabs state)))))
+(def parse-token
+  (wrap "parse-token"
+    (combine-many parse-token-char)))
 
-(defn parse-expression [state]
-  (log "parse-expression" state)
-  (let
-    [method (combine-chain parse-open-paren
+(def parse-expression
+  (wrap "parse-expression"
+    (combine-chain parse-open-paren
       (combine-alternate parse-whitespace parse-item)
-      parse-close-paren)]
-    (untabs (method (tabs state)))))
+      parse-close-paren)))
 
-(defn parse-empty-line [state]
-  (log "parse-empty-line" state)
-  (let
-    [method (combine-chain parse-newline
+(def parse-empty-line
+  (wrap "parse-empty-line"
+    (combine-chain parse-newline
       (combine-star parse-whitespace)
-      (combine-peek (combine-or parse-newline parse-eof)))]
-    (untabs (method (tabs state)))))
+      (combine-peek (combine-or parse-newline parse-eof)))))
 
-(defn parse-line-eof [state]
-  (log "parse-line-eof" state)
-  (let
-    [method (combine-chain
+(def parse-line-eof
+  (wrap "parse-line-eof"
+    (combine-chain
       (combine-star parse-whitespace)
       (combine-star parse-empty-line)
-      parse-eof)]
-    (untabs (method (tabs state)))))
+      parse-eof)))
 
-(defn parse-two-blanks [state]
-  (log "parse-two-blanks" state)
-  (let
-    [method (combine-value
+(def parse-two-blanks
+  (wrap "parse-two-blanks"
+    (combine-value
       (combine-times parse-whitespace 2)
-      (fn [value] 1))]
-    (untabs (method (tabs state)))))
+      (fn [value] 1))))
 
-(defn parse-line-breaks [state]
-  (log "parse-line-breaks" state)
-  (let
-    [method (combine-chain
+(def parse-line-breaks
+  (wrap "parse-line-breaks"
+    (combine-chain
       (combine-star parse-empty-line)
-      parse-newline)]
-    (untabs (method (tabs state)))))
+      parse-newline)))
 
-(defn parse-item [state]
-  (log "parse-item" state)
-  (let
-    [method (combine-or parse-token parse-string parse-expression)]
-    (untabs (method (tabs state)))))
+(def parse-item
+  (wrap "parse-item"
+    (combine-or parse-token parse-string parse-expression)))
 
-(defn parse-indentation [state]
-  (log "parse-indentation" state)
-  (let
-    [method
-      (combine-value
-        (combine-chain
-          (combine-value parse-line-breaks (fn [value] nil))
-          (combine-value (combine-many parse-two-blanks)
-            (fn [value] (count value))))
-        (fn [value] (println "debug indentation" value) (first value)))]
-    (untabs (method (tabs state)))))
+(def parse-indentation
+  (wrap "parse-indentation"
+    (combine-value
+      (combine-chain
+        (combine-value parse-line-breaks (fn [value] nil))
+        (combine-value (combine-many parse-two-blanks)
+          (fn [value] (count value))))
+      (fn [value] (println "debug indentation" value) (first value)))))
 
-(defn parse-inner-block [state]
-  (log "parse-inner-block" state)
-  (let
-    [method (combine-chain parse-indent
+(def parse-inner-block
+  (wrap "parse-inner-block"
+    (combine-chain parse-indent
       (combine-alternate parse-block parse-align)
-      parse-unindent)]
-    (untabs (method (tabs state)))))
+      parse-unindent)))
 
-(defn parse-block-line [state]
-  (log "parse-block-line" state)
-  (let
-    [method (combine-chain
+(def parse-block-line
+  (wrap "parse-block-line"
+    (combine-chain
       (combine-alternate parse-item parse-whitespace)
-      (combine-optional parse-inner-block))]
-    (untabs (method (tabs state)))))
+      (combine-optional parse-inner-block))))
 
-(defn parse-block [state]
-  (log "parse-block" state)
-  (let
-    [method (combine-chain
-      (combine-alternate parse-block-line parse-align))]
-    (untabs (method (tabs state)))))
+(def parse-block
+  (wrap "parse-block"
+    (combine-chain
+      (combine-alternate parse-block-line parse-align))))
 
-(defn parse-program [state]
-  (log "parse-program" state)
-  (let
-    [method (combine-chain
+(def parse-program
+  (wrap "parse-program"
+    (combine-chain
       (combine-optional parse-line-breaks)
       (combine-alternate parse-block parse-align)
-      parse-line-eof)]
-    (untabs (method (tabs state)))))
+      parse-line-eof)))
 
 ; exposed methods
 
