@@ -28,3 +28,21 @@
         :failed false
         :value "aa"
         :code ""))))
+
+(deftest parse-expression-test
+  (testing "testing parse-expression at \"\"aa\"\""
+    (let
+      [result (parse-expression (assoc initial-state :code "(a (b))"))]
+      (are [keyname value] (= (keyname result) value)
+        :failed false
+        :value (list "a" (list "b"))
+        :code ""))))
+
+(deftest parse-block-line-test
+  (testing "testing parse-block-line at \"a\n  b\n  c\""
+    (let
+      [result (parse-block-line (assoc initial-state :code "a\n  b\n  c"))]
+      (are [keyname value] (= (keyname result) value)
+        :failed false
+        :value (list "a" (list "b") (list "c"))
+        :code ""))))
