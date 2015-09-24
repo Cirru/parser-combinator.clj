@@ -1,5 +1,6 @@
 (ns cirru.parser-combinator
-  (:use clojure.pprint))
+  (:use clojure.pprint)
+  (:require [clojure.string :as string]))
 
 ; values
 
@@ -36,7 +37,9 @@
   (assoc state :tab (subs (:tab state) 2)))
 
 (defn log [name state]
-  (println (:tab state) name (:code state) (:value state)))
+  (println (:tab state) name
+    (with-out-str (write (:code state)))
+    (with-out-str (write (:value state)))))
 
 (defn wrap [label parser]
   (fn [state]
@@ -93,7 +96,7 @@
   (wrap "combine-times"
     (fn [state]
       (let
-        [method (combine-chain (repeat n parser))]
+        [method (apply combine-chain (repeat n parser))]
         (method state)))))
 
 (defn helper-many [state parser counter]
@@ -126,8 +129,9 @@
   (wrap "combine-optional"
     (fn [state]
       (let
-        [result (parser state)]
-        (if (:failed result) state result)))))
+        [inner-state (assoc state :value nil)
+          result (parser inner-state)]
+        (if (:failed result) inner-state result)))))
 
 (defn combine-star [parser]
   (wrap "combine-star"
@@ -151,7 +155,7 @@
       (let
         [result (parser state)]
         (assoc result :value
-          (handler (:value result)))))))
+          (handler (:value result) (:failed result)))))))
 
 (defn helper-alternate [state parser-1 parser-2 counter]
   (log "helper-alternate" state)
@@ -176,55 +180,65 @@
 (def parse-quote
   (wrap "parse-quote"
     (fn [state]
-      (if (match-first state double-quote)
-        (assoc state
-          :code (subs (:code state) 1)
-          :x (+ (:x state) 1)
-          :value nil)
-        (fail state "failed parsing double quote")))))
+      (if (> (count (:code state)) 0)
+        (if (match-first state double-quote)
+          (assoc state
+            :code (subs (:code state) 1)
+            :x (+ (:x state) 1)
+            :value nil)
+          (fail state "failed parsing double quote"))
+        (fail state "no enough code")))))
 
 (def parse-whitespace
   (wrap "parse-whitespace"
     (fn [state]
-      (if (match-first state whitespace)
-        (assoc state
-          :code (subs (:code state) 1)
-          :x (+ (:x state) 1)
-          :value nil)
-        (fail state "failed parsing whitespace")))))
+      (if (> (count (:code state)) 0)
+        (if (match-first state whitespace)
+          (assoc state
+            :code (subs (:code state) 1)
+            :x (+ (:x state) 1)
+            :value nil)
+          (fail state "failed parsing whitespace"))
+        (fail state "not long enough")))))
 
 (def parse-newline
   (wrap "parse-newline"
     (fn [state]
-      (if (match-first state line-break)
-        (assoc state
-          :code (subs (:code state) 1)
-          :y (+ (:y state) 1)
-          :x 1
-          :value nil)
-        (fail state "failed parsing newline")))))
+      (if (> (count (:code state)) 0)
+        (if (match-first state line-break)
+          (assoc state
+            :code (subs (:code state) 1)
+            :y (+ (:y state) 1)
+            :x 1
+            :value nil)
+          (fail state "failed parsing newline"))
+        (fail state "not long enough")))))
 
 (def parse-open-paren
   (wrap "parse-open-paren"
     (fn [state]
-      (if (match-first state open-paren)
-        (assoc state
-          :code (subs (:code state) 1)
-          :y (+ (:y state) 1)
-          :x 1
-          :value nil)
-        (fail state "failed parsing open paren")))))
+      (if (> (count (:code state)) 0)
+        (if (match-first state open-paren)
+          (assoc state
+            :code (subs (:code state) 1)
+            :y (+ (:y state) 1)
+            :x 1
+            :value nil)
+          (fail state "failed parsing open paren"))
+        (fail state "no enough code")))))
 
 (def parse-close-paren
   (wrap "parse-close-paren"
     (fn [state]
-      (if (match-first state close-paren)
-        (assoc state
-          :code (subs (:code state) 1)
-          :y (+ (:y state) 1)
-          :x 1
-          :value nil)
-        (fail state "failed parsing close paren")))))
+      (if (> (count (:code state)) 0)
+        (if (match-first state close-paren)
+          (assoc state
+            :code (subs (:code state) 1)
+            :y (+ (:y state) 1)
+            :x 1
+            :value nil)
+          (fail state "failed parsing close paren"))
+        (fail state "not long enough")))))
 
 (def parse-special-in-token
   (wrap "parse-special-in-token"
@@ -265,7 +279,6 @@
     (fn [state]
       (let
         [result (parse-indentation state)]
-        (println "debugging" (:value result))
         (if
           (> (:value result) (:indentation result))
           (assoc state
@@ -329,7 +342,7 @@
   (wrap "parse-string-char"
     (fn [state]
       (if
-        (> (count (:code state)) 1)
+        (> (count (:code state)) 0)
         ((combine-not parse-special-in-string) state)
         (fail state "no more char for string")))))
 
@@ -337,7 +350,7 @@
   (wrap "parse-token-char"
     (fn [state]
       (if
-        (> (count (:code state)) 1)
+        (> (count (:code state)) 0)
         ((combine-not parse-special-in-token) state)
         (fail state "no more char for token")))))
 
@@ -351,8 +364,10 @@
 
 (def parse-token-end
   (wrap "parse-token-end"
-    (combine-peek
-      (combine-or parse-whitespace parse-close-paren parse-newline))))
+    (combine-value
+      (combine-peek
+        (combine-or parse-whitespace parse-close-paren parse-newline parse-eof))
+      (fn [value is-failed] nil))))
 
 (def parse-escaped
   (wrap "parse-escaped"
@@ -362,7 +377,11 @@
 
 (def parse-token
   (wrap "parse-token"
-    (combine-many parse-token-char)))
+    (combine-value
+      (combine-chain
+        (combine-many parse-token-char)
+        parse-token-end)
+      (fn [value is-failed] (string/join "" (first value))))))
 
 (def parse-expression
   (wrap "parse-expression"
@@ -387,13 +406,15 @@
   (wrap "parse-two-blanks"
     (combine-value
       (combine-times parse-whitespace 2)
-      (fn [value] 1))))
+      (fn [value is-failed] 1))))
 
 (def parse-line-breaks
   (wrap "parse-line-breaks"
-    (combine-chain
-      (combine-star parse-empty-line)
-      parse-newline)))
+    (combine-value
+      (combine-chain
+        (combine-star parse-empty-line)
+        parse-newline)
+      (fn [value is-failed] nil))))
 
 (def parse-item
   (wrap "parse-item"
@@ -403,10 +424,11 @@
   (wrap "parse-indentation"
     (combine-value
       (combine-chain
-        (combine-value parse-line-breaks (fn [value] nil))
-        (combine-value (combine-many parse-two-blanks)
-          (fn [value] (count value))))
-      (fn [value] (println "debug indentation" value) (first value)))))
+        (combine-value parse-line-breaks (fn [value is-failed] nil))
+        (combine-value (combine-star parse-two-blanks)
+          (fn [value is-failed] (count value))))
+      (fn [value is-failed]
+        (if is-failed 0 (last value))))))
 
 (def parse-inner-block
   (wrap "parse-inner-block"
@@ -416,9 +438,12 @@
 
 (def parse-block-line
   (wrap "parse-block-line"
-    (combine-chain
-      (combine-alternate parse-item parse-whitespace)
-      (combine-optional parse-inner-block))))
+    (combine-value
+      (combine-chain
+        (combine-alternate parse-item parse-whitespace)
+        (combine-optional parse-inner-block))
+      (fn [value is-failed]
+        (conj (filter some? (rest value)) (first (first value)))))))
 
 (def parse-block
   (wrap "parse-block"
@@ -434,12 +459,19 @@
 
 ; exposed methods
 
+(def initial-state {
+  :code ""
+  :indentation 0
+  :x 0 :y 0
+  :tab ""
+  :failed false
+  })
+
 (defn parse [code]
-  (let
-    [initial {:code code
-      :value nil :msg ""
-      :indentation 0
-      :x 1 :y 1
-      :tab ""
-      :failed false}]
-    (parse-program initial)))
+  (parse-program (assoc initial-state :code code)))
+
+(defn try [code]
+  (parse-token (assoc initial-state :code code)))
+
+(defn test-parse-block-line
+  (parse-block-line (assoc initial-state :code "aa")))
