@@ -55,6 +55,8 @@
         (with-out-str (write (:msg result))))
       (untabs result))))
 
+(defn just [label parser] parser)
+
 ; combinators
 
 (defn helper-or [state parsers]
@@ -178,7 +180,7 @@
 ; parsers
 
 (def parse-quote
-  (wrap "parse-quote"
+  (just "parse-quote"
     (fn [state]
       (if (> (count (:code state)) 0)
         (if (match-first state double-quote)
@@ -307,39 +309,55 @@
           (fail result "not aligned"))))))
 
 (def parse-escaped-newline
-  (wrap "parse-escaped-newline"
+  (just "parse-escaped-newline"
     (fn [state]
-      (if
-        (= (subs (:code state) 0 2) "\\n")
-        (assoc state :code (:subs (:code state) 2))
-        (fail state "no escaped newline")))))
+      (if (> (count (:code state)) 1)
+        (if
+          (= (subs (:code state) 0 2) "\\n")
+          (assoc state
+            :code (subs (:code state) 2)
+            :value "\n")
+          (fail state "no escaped newline"))
+        (fail state "no enough code")))))
 
 (def parse-escaped-tab
-  (wrap "parse-escaped-tab"
+  (just "parse-escaped-tab"
     (fn [state]
-      (if
-        (= (subs (:code state) 0 2) "\\t")
-        (assoc state :code (:subs (:code state) 2))
-        (fail state "no escaped tab")))))
+      (if (> (count (:code state)) 1)
+        (if
+          (= (subs (:code state) 0 2) "\\t")
+          (assoc state
+            :code (subs (:code state) 2)
+            :value "\t")
+          (fail state "no escaped tab"))
+        (fail state "no enough code")))))
 
 (def parse-escaped-double-quote
-  (wrap "parse-escaped-double-quote"
+  (just "parse-escaped-double-quote"
     (fn [state]
-      (if
-        (= (subs (:code state) 0 2) "\\\"")
-        (assoc state :code (:subs (:code state) 2))
-        (fail state "no escaped double quote")))))
+      (if (> (count (:code state)) 1)
+        (if
+          (= (subs (:code state) 0 2) "\\\"")
+          (assoc state
+            :code (subs (:code state) 2)
+            :value "\"")
+          (fail state "no escaped double quote"))
+        (fail state "no enough code")))))
 
 (def parse-escaped-backslash
-  (wrap "parse-escaped-backslash"
+  (just "parse-escaped-backslash"
     (fn [state]
-      (if
-        (= (subs (:code state) 0 2) "\\\\")
-        (assoc state :code (:subs (:code state) 2))
-        (fail state "no escaped backslash")))))
+      (if (> (count (:code state)) 1)
+        (if
+          (= (subs (:code state) 0 2) "\\\\")
+          (assoc state
+            :code (subs (:code state) 2)
+            :value "\\")
+          (fail state "no escaped backslash"))
+        (fail state "no enough code")))))
 
 (def parse-string-char
-  (wrap "parse-string-char"
+  (just "parse-string-char"
     (fn [state]
       (if
         (> (count (:code state)) 0)
@@ -347,7 +365,7 @@
         (fail state "no more char for string")))))
 
 (def parse-token-char
-  (wrap "parse-token-char"
+  (just "parse-token-char"
     (fn [state]
       (if
         (> (count (:code state)) 0)
@@ -356,24 +374,28 @@
 
 ; generated parser
 
-(def parse-string
-  (wrap "parse-string"
-    (combine-chain parse-quote
-      (combine-many (combine-or parse-string-char parse-escaped))
-      parse-quote)))
-
 (def parse-token-end
-  (wrap "parse-token-end"
+  (just "parse-token-end"
     (combine-value
       (combine-peek
         (combine-or parse-whitespace parse-close-paren parse-newline parse-eof))
       (fn [value is-failed] nil))))
 
 (def parse-escaped
-  (wrap "parse-escaped"
+  (just "parse-escaped"
     (combine-or parse-escaped-newline parse-escaped-tab
       parse-escaped-double-quote
       parse-escaped-backslash)))
+
+(def parse-string
+  (wrap "parse-string"
+    (combine-value
+      (combine-chain parse-quote
+        (combine-star (combine-or parse-string-char parse-escaped))
+        parse-quote)
+      (fn [value is-failed]
+        (if is-failed nil
+          (string/join "" (nth value 1)))))))
 
 (def parse-token
   (wrap "parse-token"
@@ -386,7 +408,7 @@
 (def parse-expression
   (wrap "parse-expression"
     (combine-chain parse-open-paren
-      (combine-alternate parse-whitespace parse-item)
+      (combine-optional (combine-alternate parse-item parse-whitespace))
       parse-close-paren)))
 
 (def parse-empty-line
@@ -443,7 +465,12 @@
         (combine-alternate parse-item parse-whitespace)
         (combine-optional parse-inner-block))
       (fn [value is-failed]
-        (conj (filter some? (rest value)) (first (first value)))))))
+        (let
+          [main (into [] (filter some? (first value)))
+            nested (last value)]
+          (if (some? nested)
+            (conj main nested)
+            main))))))
 
 (def parse-block
   (wrap "parse-block"
@@ -472,6 +499,3 @@
 
 (defn try [code]
   (parse-token (assoc initial-state :code code)))
-
-(defn test-parse-block-line
-  (parse-block-line (assoc initial-state :code "aa")))
