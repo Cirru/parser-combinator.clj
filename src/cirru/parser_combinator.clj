@@ -1,6 +1,8 @@
 (ns cirru.parser-combinator
   (:use clojure.pprint)
-  (:require [clojure.string :as string]))
+  (:require
+    [clojure.string :as string]
+    [cirru.parser-combinator.tree :as tree]))
 
 ; values
 
@@ -77,7 +79,7 @@
     (fail state "no parser is successful")))
 
 (defn combine-or [& parsers]
-  (wrap "combine-or"
+  (just "combine-or"
     (fn [state]
       (helper-or state parsers))))
 
@@ -125,7 +127,7 @@
       (helper-many (assoc state :value (list)) parser 0))))
 
 (defn combine-not [parser]
-  (wrap "combine-not"
+  (just "combine-not"
     (fn [state]
       (let
         [result (parser state)]
@@ -142,14 +144,14 @@
         (if (:failed result) inner-state result)))))
 
 (defn combine-star [parser]
-  (wrap "combine-star"
+  (just "combine-star"
     (fn [state]
       (let
         [method (combine-optional (combine-many parser))]
         (method state)))))
 
 (defn combine-peek [parser]
-  (wrap "combine-peek"
+  (just "combine-peek"
     (fn [state]
       (let
         [result (parser state)]
@@ -166,7 +168,7 @@
           (handler (:value result) (:failed result)))))))
 
 (defn helper-alternate [state parser-1 parser-2 counter]
-  (log "helper-alternate" state)
+  (log-nothing "helper-alternate" state)
   (let
     [result (parser-1 state)]
     (if (:failed result)
@@ -178,7 +180,7 @@
         parser-2 parser-1 (+ counter 1)))))
 
 (defn combine-alternate [parser-1 parser-2]
-  (wrap "combine-alternate"
+  (just "combine-alternate"
     (fn [state]
       (helper-alternate
         (assoc state :value (list)) parser-1 parser-2 0))))
@@ -276,14 +278,14 @@
           (fail result "found no special in string"))))))
 
 (def parse-eof
-  (wrap "parse-eof"
+  (just "parse-eof"
     (fn [state]
       (if (= (:code state) "")
         (assoc state :value nil)
         (fail state "expected EOF")))))
 
 (def parse-indent
-  (wrap "parse-indent"
+  (just "parse-indent"
     (fn [state]
       (let
         [result (parse-indentation state)]
@@ -295,7 +297,7 @@
           (fail result "no indent"))))))
 
 (def parse-unindent
-  (wrap "parse-unindent"
+  (just "parse-unindent"
     (fn [state]
       (let
         [result (parse-indentation state)]
@@ -307,7 +309,7 @@
           (fail result "no unindent"))))))
 
 (def parse-align
-  (wrap "parse-align"
+  (just "parse-align"
     (fn [state]
       (let
         [result (parse-indentation state)]
@@ -396,7 +398,7 @@
       parse-escaped-backslash)) state))
 
 (defn parse-string [state]
-  ((wrap "parse-string"
+  ((just "parse-string"
     (combine-value
       (combine-chain parse-quote
         (combine-star (combine-or parse-string-char parse-escaped))
@@ -428,26 +430,26 @@
           (filter some? (nth value 1)))))) state))
 
 (defn parse-empty-line [state]
-  ((wrap "parse-empty-line"
+  ((just "parse-empty-line"
     (combine-chain parse-newline
       (combine-star parse-whitespace)
       (combine-peek (combine-or parse-newline parse-eof)))) state))
 
 (defn parse-line-eof [state]
-  ((wrap "parse-line-eof"
+  ((just "parse-line-eof"
     (combine-chain
       (combine-star parse-whitespace)
       (combine-star parse-empty-line)
       parse-eof)) state))
 
 (defn parse-two-blanks [state]
-  ((wrap "parse-two-blanks"
+  ((just "parse-two-blanks"
     (combine-value
       (combine-times parse-whitespace 2)
       (fn [value is-failed] 1))) state))
 
 (defn parse-line-breaks [state]
-  ((wrap "parse-line-breaks"
+  ((just "parse-line-breaks"
     (combine-value
       (combine-chain
         (combine-star parse-empty-line)
@@ -465,7 +467,7 @@
         (if is-failed 0 (last value))))) state))
 
 (defn parse-inner-block [state]
-  ((wrap "parse-inner-block"
+  ((just "parse-inner-block"
     (combine-value
       (combine-chain parse-indent
         (combine-value
@@ -478,7 +480,7 @@
           (filter some? (nth value 2)))))) state))
 
 (defn parse-block-line [state]
-  ((wrap "parse-block-line"
+  ((just "parse-block-line"
     (combine-value
       (combine-chain
         (combine-alternate parse-item parse-whitespace)
@@ -492,7 +494,7 @@
             main))))) state))
 
 (defn parse-program [state]
-  ((wrap "parse-program"
+  ((just "parse-program"
     (combine-value
       (combine-chain
         (combine-optional parse-line-breaks)
@@ -512,8 +514,11 @@
   :failed false
   })
 
-(defn parse [code]
-  (parse-program (assoc initial-state :code code)))
-
-(defn try [code]
-  (parse-token (assoc initial-state :code code)))
+(defn pare [code]
+  (let
+    [result (parse-program (assoc initial-state :code code))]
+    (if (:failed result)
+      result
+      (assoc result :value
+        (tree/resolve-comma (tree/resolve-dollar
+          (tree/turn-vec (:value result))))))))
