@@ -11,7 +11,7 @@
 (def whitespace " ")
 (def line-break "\n")
 (def double-quote "\"")
-(def specials-in-token "() \n\t")
+(def specials-in-token "\"() \n\t")
 (def specials-in-string "\"\\\n")
 
 ; declare
