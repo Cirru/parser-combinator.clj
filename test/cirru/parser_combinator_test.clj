@@ -53,5 +53,5 @@
       [result (parse-program (assoc initial-state :code "a\nb\n  c\nd"))]
       (are [keyname value] (= (keyname result) value)
         :failed false
-        :value (list ("a") (list "b" (list "c")) (list "d"))
+        :value (list (list "a") (list "b" (list "c")) (list "d"))
         :code ""))))

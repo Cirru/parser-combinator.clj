@@ -382,90 +382,90 @@
 
 ; generated parser
 
-(def parse-token-end
-  (just "parse-token-end"
+(defn parse-token-end [state]
+  ((just "parse-token-end"
     (combine-value
       (combine-peek
         (combine-or parse-whitespace parse-close-paren parse-newline parse-eof))
-      (fn [value is-failed] nil))))
+      (fn [value is-failed] nil))) state))
 
-(def parse-escaped
-  (just "parse-escaped"
+(defn parse-escaped [state]
+  ((just "parse-escaped"
     (combine-or parse-escaped-newline parse-escaped-tab
       parse-escaped-double-quote
-      parse-escaped-backslash)))
+      parse-escaped-backslash)) state))
 
-(def parse-string
-  (wrap "parse-string"
+(defn parse-string [state]
+  ((wrap "parse-string"
     (combine-value
       (combine-chain parse-quote
         (combine-star (combine-or parse-string-char parse-escaped))
         parse-quote)
       (fn [value is-failed]
         (if is-failed nil
-          (string/join "" (nth value 1)))))))
+          (string/join "" (nth value 1)))))) state))
 
-(def parse-token
-  (just "parse-token"
+(defn parse-token [state]
+  ((just "parse-token"
     (combine-value
       (combine-chain
         (combine-many parse-token-char)
         parse-token-end)
-      (fn [value is-failed] (string/join "" (first value))))))
+      (fn [value is-failed] (string/join "" (first value))))) state))
 
-(def parse-item
-  (just "parse-item"
-    (combine-or parse-token parse-string parse-expression)))
+(defn parse-item [state]
+  ((just "parse-item"
+    (combine-or parse-token parse-string parse-expression)) state))
 
-(def parse-expression
-  (just "parse-expression"
+(defn parse-expression [state]
+  ((just "parse-expression"
     (combine-value
       (combine-chain parse-open-paren
         (combine-optional (combine-alternate parse-item parse-whitespace))
         parse-close-paren)
       (fn [value is-failed]
         (if is-failed nil
-          (filter some? (nth value 1)))))))
+          (filter some? (nth value 1)))))) state))
 
-(def parse-empty-line
-  (wrap "parse-empty-line"
+(defn parse-empty-line [state]
+  ((wrap "parse-empty-line"
     (combine-chain parse-newline
       (combine-star parse-whitespace)
-      (combine-peek (combine-or parse-newline parse-eof)))))
+      (combine-peek (combine-or parse-newline parse-eof)))) state))
 
-(def parse-line-eof
-  (wrap "parse-line-eof"
+(defn parse-line-eof [state]
+  ((wrap "parse-line-eof"
     (combine-chain
       (combine-star parse-whitespace)
       (combine-star parse-empty-line)
-      parse-eof)))
+      parse-eof)) state))
 
-(def parse-two-blanks
-  (wrap "parse-two-blanks"
+(defn parse-two-blanks [state]
+  ((wrap "parse-two-blanks"
     (combine-value
       (combine-times parse-whitespace 2)
-      (fn [value is-failed] 1))))
+      (fn [value is-failed] 1))) state))
 
-(def parse-line-breaks
-  (wrap "parse-line-breaks"
+(defn parse-line-breaks [state]
+  ((wrap "parse-line-breaks"
     (combine-value
       (combine-chain
         (combine-star parse-empty-line)
         parse-newline)
-      (fn [value is-failed] nil))))
+      (fn [value is-failed] nil))) state))
 
-(def parse-indentation
-  (just "parse-indentation"
+(defn parse-indentation [state]
+  ((just "parse-indentation"
     (combine-value
       (combine-chain
         (combine-value parse-line-breaks (fn [value is-failed] nil))
         (combine-value (combine-star parse-two-blanks)
           (fn [value is-failed] (count value))))
       (fn [value is-failed]
-        (if is-failed 0 (last value))))))
+        (if is-failed 0 (last value))))) state))
 
-(def parse-inner-block
-  (wrap "parse-inner-block"
+(defn parse-inner-block [state]
+  ((wrap "parse-inner-block"
     (combine-value
       (combine-chain parse-indent
         (combine-value
@@ -475,10 +475,10 @@
         parse-unindent)
       (fn [value is-failed]
         (if is-failed nil
-          (filter some? (nth value 2)))))))
+          (filter some? (nth value 2)))))) state))
 
-(def parse-block-line
-  (wrap "parse-block-line"
+(defn parse-block-line [state]
+  ((wrap "parse-block-line"
     (combine-value
       (combine-chain
         (combine-alternate parse-item parse-whitespace)
@@ -489,10 +489,10 @@
             nested (into [] (last value))]
           (if (some? nested)
             (concat main nested)
-            main))))))
+            main))))) state))
 
-(def parse-program
-  (wrap "parse-program"
+(defn parse-program [state]
+  ((wrap "parse-program"
     (combine-value
       (combine-chain
         (combine-optional parse-line-breaks)
@@ -500,7 +500,7 @@
         parse-line-eof)
       (fn [value is-failed]
         (if is-failed nil
-          (filter some? (nth value 1)))))))
+          (filter some? (nth value 1)))))) state))
 
 ; exposed methods
 
