@@ -1,6 +1,8 @@
 (ns cirru.parser-combinator-test
+  (:use clojure.pprint)
   (:require [clojure.test :refer :all]
-            [cirru.parser-combinator :refer :all]))
+            [cirru.parser-combinator :refer :all]
+            [cheshire.core :as cheshire]))
 
 (deftest parse-token-test
   (testing "testing parse-token at \"aa\""
@@ -55,3 +57,53 @@
         :failed false
         :value (list (list "a") (list "b" (list "c")) (list "d"))
         :code ""))))
+
+(defn parse-file [x]
+  (let
+    [file (str "cirru/" x ".cirru")]
+    (:value (pare (slurp file)))))
+
+(defn parse-json [x]
+  (let
+    [file (str "ast/" x ".json")]
+    (into [] (cheshire/parse-string (slurp file)))))
+
+(deftest pare-comma
+  (testing "pare line"
+    (is (= (parse-file "line") (parse-json "line")))))
+
+(deftest pare-demo
+  (testing "pare demo"
+    (is (= (parse-file "demo") (parse-json "demo")))))
+
+(deftest pare-folding
+  (testing "pare folding"
+    (is (= (parse-file "folding") (parse-json "folding")))))
+
+(deftest pare-html
+  (testing "pare html"
+    (is (= (parse-file "html") (parse-json "html")))))
+
+(deftest pare-indent
+  (testing "pare indent"
+    (is (= (parse-file "indent") (parse-json "indent")))))
+
+(deftest pare-line
+  (testing "pare line"
+    (is (= (parse-file "line") (parse-json "line")))))
+
+(deftest pare-parentheses
+  (testing "pare parentheses"
+    (is (= (parse-file "parentheses") (parse-json "parentheses")))))
+
+(deftest pare-quote
+  (testing "pare quote"
+    (is (= (parse-file "quote") (parse-json "quote")))))
+
+(deftest pare-spaces
+  (testing "pare spaces"
+    (is (= (parse-file "spaces") (parse-json "spaces")))))
+
+(deftest pare-unfolding
+  (testing "pare unfolding"
+    (is (= (parse-file "unfolding") (parse-json "unfolding")))))
