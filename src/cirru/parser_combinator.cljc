@@ -1,7 +1,7 @@
 (ns cirru.parser-combinator
-  (:use clojure.pprint)
   (:require
     [clojure.string :as string]
+    [clojure.pprint :as pp]
     [cirru.parser-combinator.tree :as tree]))
 
 ; values
@@ -42,25 +42,25 @@
 
 (defn log [name state]
   (println (:tab state) name
-    (with-out-str (write (:code state)))
-    (with-out-str (write (:value state)))))
+    (with-out-str (pp/write (:code state)))
+    (with-out-str (pp/write (:value state)))))
 
 (defn log-nothing [name state] nil)
 
 (defn wrap [label parser]
   (fn [state]
     (println (:tab (tabs state)) label
-      (with-out-str (write (:code state)))
+      (with-out-str (pp/write (:code state)))
       (:indentation state)
       (:value state))
     (let
       [result (parser (tabs state))]
       (println (:tab result) label
-        (with-out-str (write (:code result)))
+        (with-out-str (pp/write (:code result)))
         (:indentation state)
-        (with-out-str (write (:value result)))
+        (with-out-str (pp/write (:value result)))
         (:failed result)
-        (with-out-str (write (:msg result))))
+        (with-out-str (pp/write (:msg result))))
       (untabs result))))
 
 (defn just [label parser] parser)
