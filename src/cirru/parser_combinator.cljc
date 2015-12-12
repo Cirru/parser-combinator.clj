@@ -254,7 +254,7 @@
             code-rest (subs (:code state) 1)
             result (assoc state :code code-rest :value code-first)]
           (if
-            (.contains specials-in-token code-first)
+            (>= (.indexOf specials-in-token code-first) 0)
             result
             (fail result "found no special in token")))))))
 
@@ -266,7 +266,7 @@
           code-rest (subs (:code state) 1)
           result (assoc state :code code-rest :value code-first)]
         (if
-          (.contains specials-in-string code-first)
+          (>= (.indexOf specials-in-string code-first) 0)
           result
           (fail result "found no special in string"))))))
 

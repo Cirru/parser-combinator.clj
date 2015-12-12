@@ -1,4 +1,4 @@
-(defproject cirru/parser-combinator "0.0.5"
+(defproject cirru/parser-combinator "0.0.6"
   :description "Cirru Parser learning from Parser Combinator"
   :url "https://github.com/Cirru/parser-combinator.clj"
   :license {:name "Eclipse Public License"
