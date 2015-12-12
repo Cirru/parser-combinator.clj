@@ -1,5 +1,4 @@
 (ns cirru.parser-combinator-test
-  (:use clojure.pprint)
   (:require [clojure.test :refer :all]
             [cirru.parser-combinator :refer :all]
             [cheshire.core :as cheshire]))
