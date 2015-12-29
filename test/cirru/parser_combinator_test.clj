@@ -87,6 +87,16 @@
   (testing "pare indent"
     (is (= (parse-file "indent") (parse-json "indent")))))
 
+(deftest parse-indent-test
+  (testing "testing parse-indent-test at nested indent"
+    (let
+      [result (parse-program
+        (assoc initial-state :code "a\n    b\n  c" :original-code "a\n    b\n  c"))]
+      (are [keyname value] (= (keyname result) value)
+        :failed false
+        :value (list (list "a" (list (list "b")) (list "c")))
+        :code ""))))
+
 (deftest pare-line
   (testing "pare line"
     (is (= (parse-file "line") (parse-json "line")))))

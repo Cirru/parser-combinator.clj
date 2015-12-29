@@ -1,7 +1,8 @@
 (ns cirru.parser-combinator
   (:require
     [clojure.string :as string]
-    [cirru.parser-combinator.tree :as tree]))
+    [cirru.parser-combinator.tree :as tree]
+    [clojure.pprint :as pp]))
 
 ; values
 
@@ -33,7 +34,7 @@
 
 (defn tabs [state]
   (assoc state
-    :tab (str " ." (:tab state))
+    :tab (str "  " (:tab state))
     :msg ""))
 
 (defn untabs [state]
@@ -46,14 +47,15 @@
 
 (defn wrap [label parser]
   (fn [state]
-    (println (:tab (tabs state)) label
-      (:indentation state)
-      (:value state))
+    (println (:tab (tabs state)) ">" label
+      (with-out-str (pp/write (:code state)))
+      (:indentation state))
     (let
       [result (parser (tabs state))]
-      (println (:tab result) label
-        (:indentation state))
-        (:failed result)
+      (println (:tab result) "<" label
+        (not (:failed result))
+        (with-out-str (pp/write (:value result)))
+        (:indentation result))
       (untabs result))))
 
 (defn just [label parser] parser)
@@ -72,7 +74,7 @@
     (fail state "no parser is successful")))
 
 (defn combine-or [& parsers]
-  (just "combine-or"
+  (wrap "combine-or"
     (fn [state]
       (helper-or state parsers))))
 
@@ -173,7 +175,7 @@
         parser-2 parser-1 (+ counter 1)))))
 
 (defn combine-alternate [parser-1 parser-2]
-  (just "combine-alternate"
+  (wrap "combine-alternate"
     (fn [state]
       (helper-alternate
         (assoc state :value (list)) parser-1 parser-2 0))))
@@ -181,7 +183,7 @@
 ; parsers
 
 (def parse-quote
-  (just "parse-quote"
+  (wrap "parse-quote"
     (fn [state]
       (if (> (count (:code state)) 0)
         (if (match-first state double-quote)
@@ -218,7 +220,7 @@
         (fail state "not long enough")))))
 
 (def parse-open-paren
-  (just "parse-open-paren"
+  (wrap "parse-open-paren"
     (fn [state]
       (if (> (count (:code state)) 0)
         (if (match-first state open-paren)
@@ -259,7 +261,7 @@
             (fail result "found no special in token")))))))
 
 (def parse-special-in-string
-  (just "parse-special-in-string"
+  (wrap "parse-special-in-string"
     (fn [state]
       (let
         [code-first (subs (:code state) 0 1)
@@ -271,48 +273,54 @@
           (fail result "found no special in string"))))))
 
 (def parse-eof
-  (just "parse-eof"
+  (wrap "parse-eof"
     (fn [state]
       (if (= (:code state) "")
         (assoc state :value nil)
         (fail state "expected EOF")))))
 
 (def parse-indent
-  (just "parse-indent"
+  (wrap "parse-indent"
     (fn [state]
       (let
         [result (parse-indentation state)]
-        (if
-          (> (:value result) (:indentation result))
-          (assoc state
-            :indentation (+ (:indentation result) 1)
-            :value nil)
-          (fail result "no indent"))))))
+        (if (:failed result)
+          (fail state "no indent")
+          (if
+            (> (:value result) (:indentation result))
+            (assoc state
+              :indentation (+ (:indentation result) 1)
+              :value nil)
+            (fail state "no indent")))))))
 
 (def parse-unindent
-  (just "parse-unindent"
+  (wrap "parse-unindent"
     (fn [state]
       (let
         [result (parse-indentation state)]
-        (if
-          (< (:value result) (:indentation result))
-          (assoc state
-            :indentation (- (:indentation result) 1)
-            :value nil)
-          (fail result "no unindent"))))))
+        (if (:failed result)
+          (fail state "no unindent")
+          (if
+            (< (:value result) (:indentation result))
+            (assoc state
+              :indentation (- (:indentation result) 1)
+              :value nil)
+            (fail state "no unindent")))))))
 
 (def parse-align
-  (just "parse-align"
+  (wrap "parse-align"
     (fn [state]
       (let
         [result (parse-indentation state)]
-        (if
-          (= (:value result) (:indentation state))
-          (assoc result :value nil)
-          (fail result "not aligned"))))))
+        (if (:failed result)
+          (fail state "not aligned")
+          (if
+            (= (:value result) (:indentation state))
+            (assoc result :value nil)
+            (fail state "not aligned")))))))
 
 (def parse-escaped-newline
-  (just "parse-escaped-newline"
+  (wrap "parse-escaped-newline"
     (fn [state]
       (if (> (count (:code state)) 1)
         (if
@@ -324,7 +332,7 @@
         (fail state "no enough code")))))
 
 (def parse-escaped-tab
-  (just "parse-escaped-tab"
+  (wrap "parse-escaped-tab"
     (fn [state]
       (if (> (count (:code state)) 1)
         (if
@@ -336,7 +344,7 @@
         (fail state "no enough code")))))
 
 (def parse-escaped-double-quote
-  (just "parse-escaped-double-quote"
+  (wrap "parse-escaped-double-quote"
     (fn [state]
       (if (> (count (:code state)) 1)
         (if
@@ -348,7 +356,7 @@
         (fail state "no enough code")))))
 
 (def parse-escaped-backslash
-  (just "parse-escaped-backslash"
+  (wrap "parse-escaped-backslash"
     (fn [state]
       (if (> (count (:code state)) 1)
         (if
@@ -360,7 +368,7 @@
         (fail state "no enough code")))))
 
 (def parse-string-char
-  (just "parse-string-char"
+  (wrap "parse-string-char"
     (fn [state]
       (if
         (> (count (:code state)) 0)
@@ -385,13 +393,13 @@
       (fn [value is-failed] nil))) state))
 
 (defn parse-escaped [state]
-  ((just "parse-escaped"
+  ((wrap "parse-escaped"
     (combine-or parse-escaped-newline parse-escaped-tab
       parse-escaped-double-quote
       parse-escaped-backslash)) state))
 
 (defn parse-string [state]
-  ((just "parse-string"
+  ((wrap "parse-string"
     (combine-value
       (combine-chain parse-quote
         (combine-star (combine-or parse-string-char parse-escaped))
@@ -409,11 +417,11 @@
       (fn [value is-failed] (string/join "" (first value))))) state))
 
 (defn parse-item [state]
-  ((just "parse-item"
+  ((wrap "parse-item"
     (combine-or parse-token parse-string parse-expression)) state))
 
 (defn parse-expression [state]
-  ((just "parse-expression"
+  ((wrap "parse-expression"
     (combine-value
       (combine-chain parse-open-paren
         (combine-optional (combine-alternate parse-item parse-whitespace))
@@ -429,7 +437,7 @@
       (combine-peek (combine-or parse-newline parse-eof)))) state))
 
 (defn parse-line-eof [state]
-  ((just "parse-line-eof"
+  ((wrap "parse-line-eof"
     (combine-chain
       (combine-star parse-whitespace)
       (combine-star parse-empty-line)
@@ -442,38 +450,59 @@
       (fn [value is-failed] 1))) state))
 
 (defn parse-line-breaks [state]
-  ((just "parse-line-breaks"
+  ((wrap "parse-line-breaks"
     (combine-value
       (combine-chain
         (combine-star parse-empty-line)
         parse-newline)
       (fn [value is-failed] nil))) state))
 
+(defn parse-eof-indentation [state]
+  (if (= (:code state) "")
+    (assoc state :value 0)
+    (fail state "not eof")))
+
 (defn parse-indentation [state]
-  ((just "parse-indentation"
-    (combine-value
-      (combine-chain
-        (combine-value parse-line-breaks (fn [value is-failed] nil))
-        (combine-value (combine-star parse-two-blanks)
-          (fn [value is-failed] (count value))))
-      (fn [value is-failed]
-        (if is-failed 0 (last value))))) state))
+  ((wrap "parse-indentation"
+    (combine-or parse-eof-indentation
+      (combine-value
+        (combine-chain
+          (combine-value parse-line-breaks (fn [value is-failed] nil))
+          (combine-value (combine-star parse-two-blanks)
+            (fn [value is-failed]
+              (count value))))
+        (fn [value is-failed]
+          (if is-failed nil (last value)))))) state))
 
 (defn parse-inner-block [state]
-  ((just "parse-inner-block"
+  ((wrap "parse-inner-block"
     (combine-value
       (combine-chain parse-indent
-        (combine-value
-          (combine-optional parse-indentation)
-          (fn [value is-failed] nil))
-        (combine-alternate parse-block-line parse-align)
+        (combine-or
+          (combine-chain parse-inner-block
+            (combine-value
+              (combine-alternate parse-block-line parse-align)
+              (fn [value is-failed]
+                (if is-failed nil
+                  (filter some? value)))))
+          (combine-value
+            (combine-chain parse-indentation
+              (combine-value
+                (combine-alternate parse-block-line parse-align)
+                (fn [value is-failed]
+                  (if is-failed nil
+                    (filter some? value)))))
+            (fn [value is-failed]
+              (if is-failed nil
+                (rest value))))
+          parse-inner-block)
         parse-unindent)
       (fn [value is-failed]
         (if is-failed nil
-          (filter some? (nth value 2)))))) state))
+          (filter some? (nth value 1)))))) state))
 
 (defn parse-block-line [state]
-  ((just "parse-block-line"
+  ((wrap "parse-block-line"
     (combine-value
       (combine-chain
         (combine-alternate parse-item parse-whitespace)
@@ -487,7 +516,7 @@
             main))))) state))
 
 (defn parse-program [state]
-  ((just "parse-program"
+  ((wrap "parse-program"
     (combine-value
       (combine-chain
         (combine-optional parse-line-breaks)
@@ -501,6 +530,7 @@
 
 (def initial-state {
   :code ""
+  :original-code ""
   :indentation 0
   :x 0 :y 0
   :tab ""
@@ -509,7 +539,9 @@
 
 (defn pare [code]
   (let
-    [result (parse-program (assoc initial-state :code code))]
+    [result
+      (parse-program
+        (assoc initial-state :code code :original-code code))]
     (if (:failed result)
       result
       (assoc result :value
