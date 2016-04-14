@@ -8,7 +8,7 @@ Cirru Parser learning from Parser Combinator.
 ## Usage
 
 ```clj
-[cirru/parser-combinator "0.0.1"]
+[cirru/parser-combinator "0.0.7"]
 ```
 
 ```clj
@@ -22,7 +22,4 @@ Cirru Parser learning from Parser Combinator.
 
 ## License
 
-Copyright © 2015 jiyinyiyong
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+MIT

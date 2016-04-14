@@ -47,12 +47,12 @@
 
 (defn wrap [label parser]
   (fn [state]
-    (println (:tab (tabs state)) ">" label
+    (comment (:tab (tabs state)) ">" label
       (with-out-str (pp/write (:code state)))
       (:indentation state))
     (let
       [result (parser (tabs state))]
-      (println (:tab result) "<" label
+      (comment (:tab result) "<" label
         (not (:failed result))
         (with-out-str (pp/write (:value result)))
         (:indentation result))
@@ -479,12 +479,18 @@
     (combine-value
       (combine-chain parse-indent
         (combine-or
-          (combine-chain parse-inner-block
-            (combine-value
-              (combine-alternate parse-block-line parse-align)
-              (fn [value is-failed]
-                (if is-failed nil
-                  (filter some? value)))))
+          (combine-value
+            (combine-chain parse-inner-block parse-align
+              (combine-value
+                (combine-alternate parse-block-line parse-align)
+                (fn [value is-failed]
+                  (if is-failed nil
+                    (filter some? value)))))
+            (fn [value is-failed]
+              ; (println "---> inner-block-value" value)
+              (if is-failed nil
+                (let [[inner-data _ body-data] value]
+                  (list (concat inner-data body-data))))))
           (combine-value
             (combine-chain parse-indentation
               (combine-value
@@ -499,14 +505,18 @@
         parse-unindent)
       (fn [value is-failed]
         (if is-failed nil
-          (filter some? (nth value 1)))))) state))
+          (do
+            ; (println "---> block result value" value)
+            (filter some? (get value 1))))))) state))
 
 (defn parse-block-line [state]
   ((wrap "parse-block-line"
     (combine-value
       (combine-chain
         (combine-alternate parse-item parse-whitespace)
-        (combine-optional parse-inner-block))
+        (combine-value (combine-optional parse-inner-block)
+          (fn [value is-failed]
+            (if is-failed nil (first value)))))
       (fn [value is-failed]
         (let
           [main (into [] (filter some? (first value)))
@@ -535,7 +545,7 @@
   :x 0 :y 0
   :tab ""
   :failed false
-  })
+})
 
 (defn pare [code]
   (let
